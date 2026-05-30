@@ -14,10 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bookings: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          phone: string
+          slot_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          phone: string
+          slot_at: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string
+          slot_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
-      [_ in never]: never
+      booked_slots: {
+        Row: {
+          id: string | null
+          slot_at: string | null
+        }
+        Insert: {
+          id?: string | null
+          slot_at?: string | null
+        }
+        Update: {
+          id?: string | null
+          slot_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
