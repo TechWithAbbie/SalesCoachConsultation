@@ -44,13 +44,13 @@ function getInitialView(today: { year: number; month: number; day: number }) {
 }
 
 // ─── Booking Form ─────────────────────────────────────────────────────────────
-// Completely uncontrolled (refs only). The only internal state is `submitting`.
-// Parent never re-renders this component while the user types — key prop on
-// BookingForm guarantees a clean mount only when day/hour actually changes.
+// Completely uncontrolled (refs only). memo + stable onConfirm ref means this
+// component NEVER re-renders due to parent state changes while the user types.
 
 interface BookingFormProps {
   selectedDay: DayCell;
   selectedHour: number;
+  // Using a ref-backed stable function — reference never changes between renders
   onConfirm: (fields: {
     fullName: string;
     phone: string;
@@ -60,125 +60,123 @@ interface BookingFormProps {
   onChangeTime: () => void;
 }
 
-const BookingForm = memo(function BookingForm({
-  selectedDay,
-  selectedHour,
-  onConfirm,
-  onChangeTime,
-}: BookingFormProps) {
-  const nameRef = useRef<HTMLInputElement>(null);
-  const phoneRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
-  const topicRef = useRef<HTMLInputElement>(null);
-  const [submitting, setSubmitting] = useState(false);
+const BookingForm = memo(
+  function BookingForm({ selectedDay, selectedHour, onConfirm, onChangeTime }: BookingFormProps) {
+    const nameRef = useRef<HTMLInputElement>(null);
+    const phoneRef = useRef<HTMLInputElement>(null);
+    const emailRef = useRef<HTMLInputElement>(null);
+    const topicRef = useRef<HTMLInputElement>(null);
+    const [submitting, setSubmitting] = useState(false);
 
-  // Prevent ANY parent re-render from touching these inputs while the user types.
-  // By using uncontrolled refs + memo, this component is a pure island.
+    async function handleSubmit() {
+      const fullName = nameRef.current?.value.trim() ?? "";
+      const phone = phoneRef.current?.value.trim() ?? "";
+      const email = emailRef.current?.value.trim() ?? "";
+      const topic = topicRef.current?.value.trim() ?? "";
 
-  async function handleSubmit() {
-    const fullName = nameRef.current?.value.trim() ?? "";
-    const phone = phoneRef.current?.value.trim() ?? "";
-    const email = emailRef.current?.value.trim() ?? "";
-    const topic = topicRef.current?.value.trim() ?? "";
+      if (!fullName || !phone || !email || !topic) {
+        toast.error("Please fill in all fields.");
+        return;
+      }
 
-    if (!fullName || !phone || !email || !topic) {
-      toast.error("Please fill in all fields.");
-      return;
+      setSubmitting(true);
+      try {
+        await onConfirm({ fullName, phone, email, topic });
+      } finally {
+        setSubmitting(false);
+      }
     }
 
-    setSubmitting(true);
-    try {
-      await onConfirm({ fullName, phone, email, topic });
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    const cls =
+      "w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-1 focus:ring-gold transition";
 
-  const cls =
-    "w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-1 focus:ring-gold transition";
+    return (
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+            Step 3 — Your details
+          </p>
+          <p className="font-display text-lg mt-0.5">
+            {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
+          </p>
+        </div>
 
-  return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-border">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-          Step 3 — Your details
-        </p>
-        <p className="font-display text-lg mt-0.5">
-          {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
-        </p>
+        <div className="p-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Full Name</label>
+            <input
+              ref={nameRef}
+              type="text"
+              placeholder="Your full name"
+              maxLength={120}
+              className={cls}
+              autoComplete="name"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Phone Number</label>
+            <input
+              ref={phoneRef}
+              type="tel"
+              placeholder="+234…"
+              maxLength={40}
+              autoComplete="tel"
+              className={cls}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Email Address</label>
+            <input
+              ref={emailRef}
+              type="email"
+              placeholder="you@example.com"
+              maxLength={255}
+              autoComplete="email"
+              className={cls}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">
+              What do you want to discuss?
+            </label>
+            <input
+              ref={topicRef}
+              type="text"
+              placeholder="e.g. Closing high ticket clients, objection handling…"
+              maxLength={200}
+              className={cls}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-foreground transition hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {submitting ? "Confirming…" : "Confirm Booking & Open WhatsApp"}
+          </button>
+
+          <button
+            type="button"
+            onClick={onChangeTime}
+            className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition"
+          >
+            ← Change time
+          </button>
+        </div>
       </div>
-
-      <div className="p-5 space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Full Name</label>
-          <input
-            ref={nameRef}
-            type="text"
-            placeholder="Your full name"
-            maxLength={120}
-            className={cls}
-            // autoComplete helps mobile keyboards avoid re-layout thrash
-            autoComplete="name"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Phone Number</label>
-          <input
-            ref={phoneRef}
-            type="tel"
-            placeholder="+234…"
-            maxLength={40}
-            autoComplete="tel"
-            className={cls}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Email Address</label>
-          <input
-            ref={emailRef}
-            type="email"
-            placeholder="you@example.com"
-            maxLength={255}
-            autoComplete="email"
-            className={cls}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">
-            What do you want to discuss?
-          </label>
-          <input
-            ref={topicRef}
-            type="text"
-            placeholder="e.g. Closing high ticket clients, objection handling…"
-            maxLength={200}
-            className={cls}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-foreground transition hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {submitting ? "Confirming…" : "Confirm Booking & Open WhatsApp"}
-        </button>
-
-        <button
-          type="button"
-          onClick={onChangeTime}
-          className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition"
-        >
-          ← Change time
-        </button>
-      </div>
-    </div>
-  );
-});
+    );
+  },
+  // Custom comparator: NEVER re-render BookingForm once mounted.
+  // onConfirm is ref-backed so it's always current; selectedDay/Hour only
+  // change when the user picks a new slot, at which point the key prop
+  // on BookingForm forces a clean remount anyway.
+  () => true,
+);
 
 // ─── Main Calendar ────────────────────────────────────────────────────────────
 
@@ -191,11 +189,6 @@ export function BookingCalendar() {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
-  // ── Booked slots: plain state + effect, no react-query ──────────────────────
-  // react-query's window-focus refetch (even when disabled via config) was the
-  // root cause of the hanging form: every time the user tapped an input the
-  // browser fired a focus event, which queued a background fetch, which updated
-  // query cache, which re-rendered the parent, which reset form field focus.
   const [booked, setBooked] = useState<Set<string>>(new Set());
   const [slotsLoading, setSlotsLoading] = useState(false);
 
@@ -205,21 +198,96 @@ export function BookingCalendar() {
       const result = await fetchBookedSlots();
       setBooked(result);
     } catch {
-      // non-fatal — slots just won't show as unavailable; user sees error on submit
+      // non-fatal
     } finally {
       setSlotsLoading(false);
     }
   }, []);
 
-  // Fetch once on mount; never again unless we explicitly call loadSlots()
   useEffect(() => {
     loadSlots();
-    // intentionally no refetch-on-focus / no interval
   }, [loadSlots]);
 
   const now = useMemo(() => new Date(), []);
   const cells = useMemo(() => buildMonthGrid(view.year, view.month), [view]);
   const touchStartX = useRef<number | null>(null);
+
+  // ── Stable confirm ref ────────────────────────────────────────────────────────
+  // This is the core fix. Instead of passing handleConfirm directly (which
+  // changes reference every render because it closes over selectedDay/selectedHour),
+  // we store the latest version in a ref and pass a STABLE wrapper that never
+  // changes. BookingForm's memo comparator sees the same function reference
+  // every render → no re-render → no form hang.
+  const selectedDayRef = useRef(selectedDay);
+  const selectedHourRef = useRef(selectedHour);
+  const loadSlotsRef = useRef(loadSlots);
+
+  useEffect(() => { selectedDayRef.current = selectedDay; }, [selectedDay]);
+  useEffect(() => { selectedHourRef.current = selectedHour; }, [selectedHour]);
+  useEffect(() => { loadSlotsRef.current = loadSlots; }, [loadSlots]);
+
+  const stableConfirm = useRef(async (fields: {
+    fullName: string;
+    phone: string;
+    email: string;
+    topic: string;
+  }) => {
+    const day = selectedDayRef.current;
+    const hour = selectedHourRef.current;
+    if (!day || hour === null) return;
+
+    const slotUtc = watToUtc(day.year, day.month, day.day, hour);
+
+    const message =
+      `New Booking Request 📅\n\n` +
+      `Name: ${fields.fullName}\n` +
+      `Phone: ${fields.phone}\n` +
+      `Email: ${fields.email}\n` +
+      `Topic: ${fields.topic}\n` +
+      `Date: ${formatLongDate(day)}\n` +
+      `Time: ${formatHour(hour)} WAT\n` +
+      `Duration: 30 minutes`;
+
+    window.open(
+      `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    try {
+      const { createBooking } = await import("@/lib/bookings");
+      await createBooking({
+        slotUtc,
+        fullName: fields.fullName,
+        phone: fields.phone,
+        email: fields.email,
+      });
+
+      toast.success("Booking confirmed. Opening WhatsApp…");
+      setSelectedDay(null);
+      setSelectedHour(null);
+      setFormOpen(false);
+      setCalendarOpen(false);
+      loadSlotsRef.current();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not save booking";
+      if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
+        toast.error("That slot was just booked. Please pick another time.");
+        setSelectedHour(null);
+        setFormOpen(false);
+        setTimeOpen(true);
+        loadSlotsRef.current();
+      } else {
+        toast.error(msg);
+      }
+      throw err;
+    }
+  }).current;
+
+  const stableChangeTime = useRef(() => {
+    setFormOpen(false);
+    setTimeOpen(true);
+  }).current;
 
   // ── Day helpers ──────────────────────────────────────────────────────────────
 
@@ -267,66 +335,6 @@ export function BookingCalendar() {
     setFormOpen(true);
     setTimeOpen(false);
   }
-
-  const handleConfirm = useCallback(
-    async (fields: { fullName: string; phone: string; email: string; topic: string }) => {
-      if (!selectedDay || selectedHour === null) return;
-
-      const slotUtc = watToUtc(selectedDay.year, selectedDay.month, selectedDay.day, selectedHour);
-
-      const message =
-        `New Booking Request 📅\n\n` +
-        `Name: ${fields.fullName}\n` +
-        `Phone: ${fields.phone}\n` +
-        `Email: ${fields.email}\n` +
-        `Topic: ${fields.topic}\n` +
-        `Date: ${formatLongDate(selectedDay)}\n` +
-        `Time: ${formatHour(selectedHour)} WAT\n` +
-        `Duration: 30 minutes`;
-
-      window.open(
-        `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-
-      try {
-        const { createBooking } = await import("@/lib/bookings");
-        await createBooking({
-          slotUtc,
-          fullName: fields.fullName,
-          phone: fields.phone,
-          email: fields.email,
-        });
-
-        toast.success("Booking confirmed. Opening WhatsApp…");
-        setSelectedDay(null);
-        setSelectedHour(null);
-        setFormOpen(false);
-        setCalendarOpen(false);
-        // Refresh slots after a successful booking
-        loadSlots();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Could not save booking";
-        if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
-          toast.error("That slot was just booked. Please pick another time.");
-          setSelectedHour(null);
-          setFormOpen(false);
-          setTimeOpen(true);
-          loadSlots();
-        } else {
-          toast.error(msg);
-        }
-        throw err;
-      }
-    },
-    [selectedDay, selectedHour, loadSlots],
-  );
-
-  const handleChangeTime = useCallback(() => {
-    setFormOpen(false);
-    setTimeOpen(true);
-  }, []);
 
   // ── Touch swipe ──────────────────────────────────────────────────────────────
 
@@ -521,14 +529,14 @@ export function BookingCalendar() {
         </div>
       )}
 
-      {/* Step 3: Form — isolated, memoised, uncontrolled */}
+      {/* Step 3: Form — never re-renders once mounted */}
       {formOpen && selectedDay && selectedHour !== null && (
         <BookingForm
           key={`${selectedDay.year}-${selectedDay.month}-${selectedDay.day}-${selectedHour}`}
           selectedDay={selectedDay}
           selectedHour={selectedHour}
-          onConfirm={handleConfirm}
-          onChangeTime={handleChangeTime}
+          onConfirm={stableConfirm}
+          onChangeTime={stableChangeTime}
         />
       )}
     </div>
