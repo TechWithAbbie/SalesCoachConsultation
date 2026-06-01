@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Linkedin, Mail, Clock, Calendar as CalendarIcon } from "lucide-react";
+import { useState } from "react";
+import { Linkedin, Mail, Clock, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { BookingCalendar } from "@/components/BookingCalendar";
 import graciousPortrait from "@/assets/gracious.jpg";
@@ -16,8 +17,7 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Book a 1-on-1 with Gracious Opara" },
       {
         property: "og:description",
-        content:
-          "30-minute high-ticket sales consultations. Monday–Saturday, 10 AM to 9 PM WAT.",
+        content: "30-minute high-ticket sales consultations. Monday–Saturday, 10 AM to 9 PM WAT.",
       },
     ],
   }),
@@ -25,6 +25,8 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
+  const [showBooking, setShowBooking] = useState(false);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Toaster richColors position="top-center" />
@@ -40,10 +42,10 @@ function Landing() {
           }}
         />
         <div className="mx-auto flex max-w-5xl flex-col items-center px-6 py-16 text-center sm:py-24">
-          {/* Portrait in circle frame with gold ring */}
+          {/* Portrait */}
           <div className="relative mb-8">
-            <div className="absolute -inset-2 rounded-full bg-gradient-to-br from-[var(--gold)] via-[var(--gold-soft)] to-[var(--gold)] blur-md opacity-70" />
-            <div className="relative h-40 w-40 overflow-hidden rounded-full ring-4 ring-[var(--gold)] ring-offset-4 ring-offset-background sm:h-48 sm:w-48">
+            <div className="absolute -inset-2 rounded-full bg-linear-to-br from-gold via-gold-soft to-gold blur-md opacity-70" />
+            <div className="relative h-40 w-40 overflow-hidden rounded-full ring-4 ring-gold ring-offset-4 ring-offset-background sm:h-48 sm:w-48">
               <img
                 src={graciousPortrait}
                 alt="Gracious Opara, High Ticket Sales Coach"
@@ -53,12 +55,10 @@ function Landing() {
             </div>
           </div>
 
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gold)]">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
             High Ticket Sales Coach
           </p>
-          <h1 className="font-display text-4xl leading-tight sm:text-6xl">
-            Gracious Opara
-          </h1>
+          <h1 className="font-display text-4xl leading-tight sm:text-6xl">Gracious Opara</h1>
           <p className="mt-3 font-display text-2xl italic text-muted-foreground sm:text-3xl">
             The OG of Sales
           </p>
@@ -70,27 +70,36 @@ function Landing() {
             </span>
           </p>
 
-          <a
-            href="#calendar"
+          <button
+            type="button"
+            onClick={() => {
+              setShowBooking((v) => !v);
+              setTimeout(() => {
+                document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
+              }, 50);
+            }}
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-medium text-background transition hover:bg-foreground/90"
           >
             <CalendarIcon className="h-4 w-4" />
             Book 1-on-1 Consultation
-          </a>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform duration-300 ${showBooking ? "rotate-180" : ""}`}
+            />
+          </button>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
             <a
               href="https://www.linkedin.com/in/gracious-opara-29081b222"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-muted-foreground transition hover:text-[var(--gold)]"
+              className="inline-flex items-center gap-2 text-muted-foreground transition hover:text-gold"
             >
               <Linkedin className="h-4 w-4" />
               LinkedIn
             </a>
             <a
               href="mailto:geeopara@gmail.com"
-              className="inline-flex items-center gap-2 text-muted-foreground transition hover:text-[var(--gold)]"
+              className="inline-flex items-center gap-2 text-muted-foreground transition hover:text-gold"
             >
               <Mail className="h-4 w-4" />
               geeopara@gmail.com
@@ -100,10 +109,10 @@ function Landing() {
       </header>
 
       {/* Info strip */}
-      <section className="border-b border-border bg-[var(--gold-soft)]/30">
+      <section className="border-b border-border bg-gold-soft/30">
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 px-6 py-5 text-sm text-foreground sm:flex-row sm:justify-center sm:gap-6">
           <span className="inline-flex items-center gap-2 font-medium">
-            <Clock className="h-4 w-4 text-[var(--gold)]" />
+            <Clock className="h-4 w-4 text-gold" />
             All calls are 30 minutes
           </span>
           <span className="hidden text-muted-foreground sm:inline">•</span>
@@ -113,19 +122,19 @@ function Landing() {
         </div>
       </section>
 
-      {/* Calendar */}
-      <main id="calendar" className="mx-auto max-w-7xl px-6 py-12 sm:py-16">
-        <div className="mb-8 max-w-2xl">
-          <h2 className="font-display text-3xl sm:text-4xl">Pick a time</h2>
-          <p className="mt-2 text-muted-foreground">
-            Choose any available slot in the next four weeks. Booked slots are
-            greyed out. Once you confirm, you&rsquo;ll be redirected to WhatsApp
-            to share your booking with Gracious directly.
-          </p>
-        </div>
-
-        <BookingCalendar />
-      </main>
+      {/* Booking section */}
+      {showBooking && (
+        <main id="booking-section" className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
+          <div className="mb-8">
+            <h2 className="font-display text-3xl sm:text-4xl">Pick a date</h2>
+            <p className="mt-2 text-muted-foreground">
+              Choose an available date and time. Once you confirm, you will be redirected to
+              WhatsApp to share your booking with Gracious directly.
+            </p>
+          </div>
+          <BookingCalendar />
+        </main>
+      )}
 
       {/* Footer */}
       <footer className="border-t border-border">
@@ -136,11 +145,11 @@ function Landing() {
               href="https://www.linkedin.com/in/gracious-opara-29081b222"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[var(--gold)]"
+              className="hover:text-gold"
             >
               LinkedIn
             </a>
-            <a href="mailto:geeopara@gmail.com" className="hover:text-[var(--gold)]">
+            <a href="mailto:geeopara@gmail.com" className="hover:text-gold">
               Email
             </a>
           </div>

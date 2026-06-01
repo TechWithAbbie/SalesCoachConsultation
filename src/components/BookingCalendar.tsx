@@ -1,6 +1,7 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useCallback, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchBookedSlots,
   formatHour,
@@ -11,100 +12,272 @@ import {
   WAT_OFFSET_HOURS,
   type DayCell,
 } from "@/lib/bookings";
-import { BookingModal } from "./BookingModal";
 import { cn } from "@/lib/utils";
 
-type Selection = { day: DayCell; hour: number; slotUtc: Date };
-
-// Get today's WAT-local date components
-function todayWat(): { year: number; month: number; day: number } {
+function todayWat() {
   const wat = new Date(Date.now() + WAT_OFFSET_HOURS * 3600_000);
-  return {
-    year: wat.getUTCFullYear(),
-    month: wat.getUTCMonth(),
-    day: wat.getUTCDate(),
-  };
+  return { year: wat.getUTCFullYear(), month: wat.getUTCMonth(), day: wat.getUTCDate() };
 }
 
 function buildMonthGrid(year: number, month: number): (DayCell | null)[] {
-  // Monday-first grid
-  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0=Sun
+  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
   const leading = firstDow === 0 ? 6 : firstDow - 1;
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const cells: (DayCell | null)[] = [];
   for (let i = 0; i < leading; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(Date.UTC(year, month, d));
-    cells.push({
-      year,
-      month,
-      day: d,
-      dayOfWeek: date.getUTCDay(),
-    });
+    cells.push({ year, month, day: d, dayOfWeek: new Date(Date.UTC(year, month, d)).getUTCDay() });
   }
   while (cells.length % 7 !== 0) cells.push(null);
   return cells;
 }
 
+function getInitialView(today: { year: number; month: number; day: number }) {
+  const daysInMonth = new Date(Date.UTC(today.year, today.month + 1, 0)).getUTCDate();
+  for (let d = today.day; d <= daysInMonth; d++) {
+    const dow = new Date(Date.UTC(today.year, today.month, d)).getUTCDay();
+    if (dow !== 0) return { year: today.year, month: today.month };
+  }
+  const next = new Date(Date.UTC(today.year, today.month + 1, 1));
+  return { year: next.getUTCFullYear(), month: next.getUTCMonth() };
+}
+
+// ─── Booking form — fully isolated, zero re-renders while typing ──────────────
+// Uncontrolled inputs (refs): the DOM owns values, React is never notified.
+// The only state is `submitting` which only flips twice per submit attempt.
+
+interface BookingFormProps {
+  selectedDay: DayCell;
+  selectedHour: number;
+  onConfirm: (fields: {
+    fullName: string;
+    phone: string;
+    email: string;
+    topic: string;
+  }) => Promise<void>;
+  onChangeTime: () => void;
+}
+
+const BookingForm = memo(function BookingForm({
+  selectedDay,
+  selectedHour,
+  onConfirm,
+  onChangeTime,
+}: BookingFormProps) {
+  const nameRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const topicRef = useRef<HTMLInputElement>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    const fullName = nameRef.current?.value.trim() ?? "";
+    const phone = phoneRef.current?.value.trim() ?? "";
+    const email = emailRef.current?.value.trim() ?? "";
+    const topic = topicRef.current?.value.trim() ?? "";
+    if (!fullName || !phone || !email || !topic) {
+      toast.error("Please fill in all fields.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onConfirm({ fullName, phone, email, topic });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const cls =
+    "w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-1 focus:ring-gold transition";
+
+  return (
+    <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+          Step 3 — Your details
+        </p>
+        <p className="font-display text-lg mt-0.5">
+          {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
+        </p>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground">Full Name</label>
+          <input
+            ref={nameRef}
+            type="text"
+            placeholder="Your full name"
+            maxLength={120}
+            className={cls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground">Phone Number</label>
+          <input ref={phoneRef} type="tel" placeholder="+234…" maxLength={40} className={cls} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground">Email Address</label>
+          <input
+            ref={emailRef}
+            type="email"
+            placeholder="you@example.com"
+            maxLength={255}
+            className={cls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground">
+            What do you want to discuss?
+          </label>
+          <input
+            ref={topicRef}
+            type="text"
+            placeholder="e.g. Closing high ticket clients, objection handling…"
+            maxLength={200}
+            className={cls}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-foreground transition hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {submitting ? "Confirming…" : "Confirm Booking & Open WhatsApp"}
+        </button>
+        <button
+          type="button"
+          onClick={onChangeTime}
+          className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition"
+        >
+          ← Change time
+        </button>
+      </div>
+    </div>
+  );
+});
+
+// ─── Main calendar ────────────────────────────────────────────────────────────
+
 export function BookingCalendar() {
   const today = useMemo(todayWat, []);
-  const [view, setView] = useState({ year: today.year, month: today.month });
+  const [view, setView] = useState(() => getInitialView(today));
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DayCell | null>(null);
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [open, setOpen] = useState(false);
-  const touchStartX = useRef<number | null>(null);
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [selectedHour, setSelectedHour] = useState<number | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const now = useMemo(() => new Date(), []);
   const cells = useMemo(() => buildMonthGrid(view.year, view.month), [view]);
+  const touchStartX = useRef<number | null>(null);
 
-  const { data: booked, refetch, isLoading } = useQuery({
+  const {
+    data: booked,
+    refetch,
+    isLoading,
+  } = useQuery({
     queryKey: ["booked-slots"],
     queryFn: fetchBookedSlots,
-    refetchOnWindowFocus: true,
+    // ↓ KEY FIX: never refetch just because the user clicked into an input
+    refetchOnWindowFocus: false,
+    staleTime: 60_000, // treat data as fresh for 60 s — no background churn
   });
 
-  // Bound: can't go before current month
+  function isDayDisabled(cell: DayCell): boolean {
+    if (cell.dayOfWeek === 0) return true;
+    if (cell.year < today.year) return true;
+    if (cell.year === today.year && cell.month < today.month) return true;
+    if (cell.year === today.year && cell.month === today.month && cell.day < today.day) return true;
+    return false;
+  }
+
   const canGoPrev =
-    view.year > today.year ||
-    (view.year === today.year && view.month > today.month);
+    view.year > today.year || (view.year === today.year && view.month > today.month);
 
   function shiftMonth(delta: number) {
     if (delta < 0 && !canGoPrev) return;
     const d = new Date(Date.UTC(view.year, view.month + delta, 1));
     setView({ year: d.getUTCFullYear(), month: d.getUTCMonth() });
     setSelectedDay(null);
+    setSelectedHour(null);
+    setFormOpen(false);
   }
 
-  function isDayDisabled(cell: DayCell): boolean {
-    // No Sundays
-    if (cell.dayOfWeek === 0) return true;
-    // Past days
-    if (cell.year < today.year) return true;
-    if (cell.year === today.year && cell.month < today.month) return true;
-    if (
-      cell.year === today.year &&
-      cell.month === today.month &&
-      cell.day < today.day
-    )
-      return true;
-    return false;
-  }
-
-  function isSameDay(a: DayCell, b: DayCell): boolean {
+  function isSameDay(a: DayCell, b: DayCell) {
     return a.year === b.year && a.month === b.month && a.day === b.day;
   }
 
-  function handlePickTime(hour: number) {
-    if (!selectedDay) return;
-    const slotUtc = watToUtc(
-      selectedDay.year,
-      selectedDay.month,
-      selectedDay.day,
-      hour,
-    );
-    setSelection({ day: selectedDay, hour, slotUtc });
-    setOpen(true);
+  function handleSelectDay(cell: DayCell) {
+    setSelectedDay(cell);
+    setSelectedHour(null);
+    setFormOpen(false);
+    setCalendarOpen(false);
+    setTimeOpen(true);
   }
+
+  function handleProceedToForm() {
+    if (selectedHour === null) {
+      toast.error("Please select a time first.");
+      return;
+    }
+    setFormOpen(true);
+    setTimeOpen(false);
+  }
+
+  const handleConfirm = useCallback(
+    async (fields: { fullName: string; phone: string; email: string; topic: string }) => {
+      if (!selectedDay || selectedHour === null) return;
+      const slotUtc = watToUtc(selectedDay.year, selectedDay.month, selectedDay.day, selectedHour);
+      const message =
+        `New Booking Request 📅\n\n` +
+        `Name: ${fields.fullName}\n` +
+        `Phone: ${fields.phone}\n` +
+        `Email: ${fields.email}\n` +
+        `Topic: ${fields.topic}\n` +
+        `Date: ${formatLongDate(selectedDay)}\n` +
+        `Time: ${formatHour(selectedHour)} WAT\n` +
+        `Duration: 30 minutes`;
+      window.open(
+        `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      try {
+        const { createBooking } = await import("@/lib/bookings");
+        await createBooking({
+          slotUtc,
+          fullName: fields.fullName,
+          phone: fields.phone,
+          email: fields.email,
+        });
+        toast.success("Booking confirmed. Opening WhatsApp…");
+        setSelectedDay(null);
+        setSelectedHour(null);
+        setFormOpen(false);
+        setCalendarOpen(false);
+        refetch();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Could not save booking";
+        if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
+          toast.error("That slot was just booked. Please pick another time.");
+          setSelectedHour(null);
+          setFormOpen(false);
+          setTimeOpen(true);
+          refetch();
+        } else {
+          toast.error(msg);
+        }
+        throw err;
+      }
+    },
+    [selectedDay, selectedHour, refetch],
+  );
+
+  const handleChangeTime = useCallback(() => {
+    setFormOpen(false);
+    setTimeOpen(true);
+  }, []);
 
   function onTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
@@ -114,133 +287,188 @@ export function BookingCalendar() {
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     touchStartX.current = null;
     if (Math.abs(dx) < 50) return;
-    if (dx < 0) shiftMonth(1); // swipe left → next month
-    else shiftMonth(-1); // swipe right → previous month
+    dx < 0 ? shiftMonth(1) : shiftMonth(-1);
   }
 
   return (
-    <div className="space-y-6">
-      {/* Month header with nav */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 max-w-2xl">
+      {/* Step 1: Date */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
         <button
           type="button"
-          onClick={() => shiftMonth(-1)}
-          disabled={!canGoPrev}
-          aria-label="Previous month"
-          className={cn(
-            "rounded-full border border-border bg-card p-2 transition",
-            canGoPrev
-              ? "hover:border-[var(--gold)] hover:text-[var(--gold)]"
-              : "cursor-not-allowed opacity-40",
-          )}
+          onClick={() => setCalendarOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-left transition hover:bg-gold-soft/20"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Step 1 — Date
+            </p>
+            <p className="font-display text-lg mt-0.5">
+              {selectedDay ? formatLongDate(selectedDay) : "Select a date"}
+            </p>
+          </div>
+          <ChevronDown
+            className={cn(
+              "h-5 w-5 text-muted-foreground transition-transform duration-300",
+              calendarOpen && "rotate-180",
+            )}
+          />
         </button>
-        <div className="font-display text-xl sm:text-2xl">
-          {MONTH_NAMES_LONG[view.month]} {view.year}
-        </div>
-        <button
-          type="button"
-          onClick={() => shiftMonth(1)}
-          aria-label="Next month"
-          className="rounded-full border border-border bg-card p-2 transition hover:border-[var(--gold)] hover:text-[var(--gold)]"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
 
-      {/* Month grid */}
-      <div
-        className="rounded-2xl border border-border bg-card p-3 sm:p-5 shadow-sm select-none"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center text-xs font-medium text-muted-foreground">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <div key={d} className="py-1">
-              {d}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1 sm:gap-2">
-          {cells.map((cell, i) => {
-            if (!cell) return <div key={i} className="aspect-square" />;
-            const disabled = isDayDisabled(cell);
-            const selected = selectedDay && isSameDay(cell, selectedDay);
-            return (
+        {calendarOpen && (
+          <div
+            className="border-t border-border p-3 sm:p-5 select-none"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+          >
+            <div className="flex items-center justify-between mb-4">
               <button
-                key={i}
                 type="button"
-                disabled={disabled}
-                onClick={() => setSelectedDay(cell)}
+                onClick={() => shiftMonth(-1)}
+                disabled={!canGoPrev}
+                aria-label="Previous month"
                 className={cn(
-                  "aspect-square rounded-lg text-sm font-medium transition flex items-center justify-center",
-                  disabled
-                    ? "cursor-not-allowed text-muted-foreground/40"
-                    : selected
-                      ? "bg-[var(--gold)] text-[oklch(0.2_0.01_60)] shadow-sm"
-                      : "bg-background text-foreground hover:border hover:border-[var(--gold)] hover:bg-[var(--gold-soft)]/40 border border-transparent",
+                  "rounded-full border border-border bg-background p-2 transition",
+                  canGoPrev ? "hover:border-gold hover:text-gold" : "cursor-not-allowed opacity-40",
                 )}
               >
-                {cell.day}
+                <ChevronLeft className="h-4 w-4" />
               </button>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
-          Swipe to change month
-        </p>
+              <div className="font-display text-lg">
+                {MONTH_NAMES_LONG[view.month]} {view.year}
+              </div>
+              <button
+                type="button"
+                onClick={() => shiftMonth(1)}
+                aria-label="Next month"
+                className="rounded-full border border-border bg-background p-2 transition hover:border-gold hover:text-gold"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center text-xs font-medium text-muted-foreground">
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+                <div key={d} className="py-1">
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
+              {cells.map((cell, i) => {
+                if (!cell || isDayDisabled(cell)) return <div key={i} className="aspect-square" />;
+                const selected = selectedDay && isSameDay(cell, selectedDay);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectDay(cell)}
+                    className={cn(
+                      "aspect-square rounded-lg text-sm font-medium transition flex items-center justify-center border",
+                      selected
+                        ? "bg-gold text-foreground shadow-sm border-gold"
+                        : "bg-background text-foreground border-transparent hover:border-gold hover:bg-gold-soft/40",
+                    )}
+                  >
+                    {cell.day}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
+              Swipe to change month
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Time slots once a day is selected */}
+      {/* Step 2: Time */}
       {selectedDay && (
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <div className="mb-4">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">
-              Select a time
+        <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setTimeOpen((v) => !v);
+              setFormOpen(false);
+            }}
+            className="w-full flex items-center justify-between px-5 py-4 text-left transition hover:bg-gold-soft/20"
+          >
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Step 2 — Time
+              </p>
+              <p className="font-display text-lg mt-0.5">
+                {selectedHour !== null ? formatHour(selectedHour) + " WAT" : "Select a time"}
+              </p>
             </div>
-            <div className="font-display text-lg">
-              {formatLongDate(selectedDay)}
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform duration-300",
+                timeOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {timeOpen && (
+            <div className="border-t border-border p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                {HOURS.map((hour) => {
+                  const slotUtc = watToUtc(
+                    selectedDay.year,
+                    selectedDay.month,
+                    selectedDay.day,
+                    hour,
+                  );
+                  const isPast = slotUtc.getTime() <= now.getTime();
+                  const isBooked = booked?.has(slotUtc.toISOString()) ?? false;
+                  const disabled = isPast || isBooked || isLoading;
+                  const isSelected = selectedHour === hour;
+                  return (
+                    <button
+                      key={hour}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setSelectedHour(hour)}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-sm font-medium transition",
+                        disabled
+                          ? "cursor-not-allowed border-border bg-muted text-muted-foreground/60 line-through"
+                          : isSelected
+                            ? "border-gold bg-gold text-foreground"
+                            : "border-border bg-background text-foreground hover:border-gold hover:bg-gold-soft/50",
+                      )}
+                    >
+                      {formatHour(hour)}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={handleProceedToForm}
+                disabled={selectedHour === null}
+                className={cn(
+                  "w-full rounded-xl py-3 text-sm font-semibold transition",
+                  selectedHour !== null
+                    ? "bg-foreground text-background hover:bg-foreground/90"
+                    : "bg-muted text-muted-foreground cursor-not-allowed",
+                )}
+              >
+                Continue to your details →
+              </button>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {HOURS.map((hour) => {
-              const slotUtc = watToUtc(
-                selectedDay.year,
-                selectedDay.month,
-                selectedDay.day,
-                hour,
-              );
-              const isPast = slotUtc.getTime() <= now.getTime();
-              const isBooked = booked?.has(slotUtc.toISOString()) ?? false;
-              const disabled = isPast || isBooked || isLoading;
-              return (
-                <button
-                  key={hour}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => handlePickTime(hour)}
-                  className={cn(
-                    "rounded-md border px-3 py-2 text-sm font-medium transition",
-                    disabled
-                      ? "cursor-not-allowed border-border bg-muted text-muted-foreground/60 line-through"
-                      : "border-border bg-background text-foreground hover:border-[var(--gold)] hover:bg-[var(--gold-soft)]/50",
-                  )}
-                >
-                  {formatHour(hour)}
-                </button>
-              );
-            })}
-          </div>
+          )}
         </div>
       )}
 
-      <BookingModal
-        open={open}
-        onOpenChange={setOpen}
-        selection={selection}
-        onBooked={() => refetch()}
-      />
+      {/* Step 3: form — isolated + memoised, uncontrolled inputs */}
+      {formOpen && selectedDay && selectedHour !== null && (
+        <BookingForm
+          key={`${selectedDay.year}-${selectedDay.month}-${selectedDay.day}-${selectedHour}`}
+          selectedDay={selectedDay}
+          selectedHour={selectedHour}
+          onConfirm={handleConfirm}
+          onChangeTime={handleChangeTime}
+        />
+      )}
     </div>
   );
 }
