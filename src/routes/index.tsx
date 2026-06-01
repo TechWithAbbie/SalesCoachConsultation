@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Linkedin, Mail, Clock, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { BookingCalendar } from "@/components/BookingCalendar";
@@ -24,8 +24,45 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+// ─── Stable calendar island ────────────────────────────────────────────────────
+// Wrapping in memo means Landing's showBooking state flips NEVER cause
+// BookingCalendar to re-render. The form fields are completely isolated.
+const StableBookingCalendar = memo(BookingCalendar);
+
+// ─── Booking section ───────────────────────────────────────────────────────────
+// Extracted into its own memo'd component so it never re-renders due to
+// anything happening in Landing (hero buttons, etc.)
+const BookingSection = memo(function BookingSection() {
+  return (
+    <main id="booking-section" className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
+      <div className="mb-8">
+        <h2 className="font-display text-3xl sm:text-4xl">Pick a date</h2>
+        <p className="mt-2 text-muted-foreground">
+          Choose an available date and time. Once you confirm, you will be redirected to WhatsApp
+          to share your booking with Gracious directly.
+        </p>
+      </div>
+      <StableBookingCalendar />
+    </main>
+  );
+});
+
+// ─── Landing ───────────────────────────────────────────────────────────────────
+
 function Landing() {
   const [showBooking, setShowBooking] = useState(false);
+
+  function handleBookingToggle() {
+    setShowBooking((v) => {
+      if (!v) {
+        // Scroll after state flip
+        setTimeout(() => {
+          document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
+        }, 50);
+      }
+      return !v;
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -72,12 +109,7 @@ function Landing() {
 
           <button
             type="button"
-            onClick={() => {
-              setShowBooking((v) => !v);
-              setTimeout(() => {
-                document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
-              }, 50);
-            }}
+            onClick={handleBookingToggle}
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-medium text-background transition hover:bg-foreground/90"
           >
             <CalendarIcon className="h-4 w-4" />
@@ -122,19 +154,8 @@ function Landing() {
         </div>
       </section>
 
-      {/* Booking section */}
-      {showBooking && (
-        <main id="booking-section" className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <div className="mb-8">
-            <h2 className="font-display text-3xl sm:text-4xl">Pick a date</h2>
-            <p className="mt-2 text-muted-foreground">
-              Choose an available date and time. Once you confirm, you will be redirected to
-              WhatsApp to share your booking with Gracious directly.
-            </p>
-          </div>
-          <BookingCalendar />
-        </main>
-      )}
+      {/* Booking section — rendered once, never remounts due to memo */}
+      {showBooking && <BookingSection />}
 
       {/* Footer */}
       <footer className="border-t border-border">

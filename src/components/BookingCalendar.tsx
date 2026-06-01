@@ -1,5 +1,4 @@
-import { useMemo, useState, useRef, useCallback, memo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, useRef, useCallback, useEffect, memo } from "react";
 import { ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -13,6 +12,8 @@ import {
   type DayCell,
 } from "@/lib/bookings";
 import { cn } from "@/lib/utils";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function todayWat() {
   const wat = new Date(Date.now() + WAT_OFFSET_HOURS * 3600_000);
@@ -42,9 +43,10 @@ function getInitialView(today: { year: number; month: number; day: number }) {
   return { year: next.getUTCFullYear(), month: next.getUTCMonth() };
 }
 
-// ─── Booking form — fully isolated, zero re-renders while typing ──────────────
-// Uncontrolled inputs (refs): the DOM owns values, React is never notified.
-// The only state is `submitting` which only flips twice per submit attempt.
+// ─── Booking Form ─────────────────────────────────────────────────────────────
+// Completely uncontrolled (refs only). The only internal state is `submitting`.
+// Parent never re-renders this component while the user types — key prop on
+// BookingForm guarantees a clean mount only when day/hour actually changes.
 
 interface BookingFormProps {
   selectedDay: DayCell;
@@ -70,15 +72,20 @@ const BookingForm = memo(function BookingForm({
   const topicRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Prevent ANY parent re-render from touching these inputs while the user types.
+  // By using uncontrolled refs + memo, this component is a pure island.
+
   async function handleSubmit() {
     const fullName = nameRef.current?.value.trim() ?? "";
     const phone = phoneRef.current?.value.trim() ?? "";
     const email = emailRef.current?.value.trim() ?? "";
     const topic = topicRef.current?.value.trim() ?? "";
+
     if (!fullName || !phone || !email || !topic) {
       toast.error("Please fill in all fields.");
       return;
     }
+
     setSubmitting(true);
     try {
       await onConfirm({ fullName, phone, email, topic });
@@ -100,6 +107,7 @@ const BookingForm = memo(function BookingForm({
           {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
         </p>
       </div>
+
       <div className="p-5 space-y-4">
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground">Full Name</label>
@@ -109,12 +117,23 @@ const BookingForm = memo(function BookingForm({
             placeholder="Your full name"
             maxLength={120}
             className={cls}
+            // autoComplete helps mobile keyboards avoid re-layout thrash
+            autoComplete="name"
           />
         </div>
+
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground">Phone Number</label>
-          <input ref={phoneRef} type="tel" placeholder="+234…" maxLength={40} className={cls} />
+          <input
+            ref={phoneRef}
+            type="tel"
+            placeholder="+234…"
+            maxLength={40}
+            autoComplete="tel"
+            className={cls}
+          />
         </div>
+
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground">Email Address</label>
           <input
@@ -122,9 +141,11 @@ const BookingForm = memo(function BookingForm({
             type="email"
             placeholder="you@example.com"
             maxLength={255}
+            autoComplete="email"
             className={cls}
           />
         </div>
+
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground">
             What do you want to discuss?
@@ -137,6 +158,7 @@ const BookingForm = memo(function BookingForm({
             className={cls}
           />
         </div>
+
         <button
           type="button"
           onClick={handleSubmit}
@@ -145,6 +167,7 @@ const BookingForm = memo(function BookingForm({
         >
           {submitting ? "Confirming…" : "Confirm Booking & Open WhatsApp"}
         </button>
+
         <button
           type="button"
           onClick={onChangeTime}
@@ -157,7 +180,7 @@ const BookingForm = memo(function BookingForm({
   );
 });
 
-// ─── Main calendar ────────────────────────────────────────────────────────────
+// ─── Main Calendar ────────────────────────────────────────────────────────────
 
 export function BookingCalendar() {
   const today = useMemo(todayWat, []);
@@ -168,21 +191,37 @@ export function BookingCalendar() {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
+  // ── Booked slots: plain state + effect, no react-query ──────────────────────
+  // react-query's window-focus refetch (even when disabled via config) was the
+  // root cause of the hanging form: every time the user tapped an input the
+  // browser fired a focus event, which queued a background fetch, which updated
+  // query cache, which re-rendered the parent, which reset form field focus.
+  const [booked, setBooked] = useState<Set<string>>(new Set());
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  const loadSlots = useCallback(async () => {
+    setSlotsLoading(true);
+    try {
+      const result = await fetchBookedSlots();
+      setBooked(result);
+    } catch {
+      // non-fatal — slots just won't show as unavailable; user sees error on submit
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
+
+  // Fetch once on mount; never again unless we explicitly call loadSlots()
+  useEffect(() => {
+    loadSlots();
+    // intentionally no refetch-on-focus / no interval
+  }, [loadSlots]);
+
   const now = useMemo(() => new Date(), []);
   const cells = useMemo(() => buildMonthGrid(view.year, view.month), [view]);
   const touchStartX = useRef<number | null>(null);
 
-  const {
-    data: booked,
-    refetch,
-    isLoading,
-  } = useQuery({
-    queryKey: ["booked-slots"],
-    queryFn: fetchBookedSlots,
-    // ↓ KEY FIX: never refetch just because the user clicked into an input
-    refetchOnWindowFocus: false,
-    staleTime: 60_000, // treat data as fresh for 60 s — no background churn
-  });
+  // ── Day helpers ──────────────────────────────────────────────────────────────
 
   function isDayDisabled(cell: DayCell): boolean {
     if (cell.dayOfWeek === 0) return true;
@@ -192,8 +231,14 @@ export function BookingCalendar() {
     return false;
   }
 
+  function isSameDay(a: DayCell, b: DayCell) {
+    return a.year === b.year && a.month === b.month && a.day === b.day;
+  }
+
   const canGoPrev =
     view.year > today.year || (view.year === today.year && view.month > today.month);
+
+  // ── Month navigation ─────────────────────────────────────────────────────────
 
   function shiftMonth(delta: number) {
     if (delta < 0 && !canGoPrev) return;
@@ -204,9 +249,7 @@ export function BookingCalendar() {
     setFormOpen(false);
   }
 
-  function isSameDay(a: DayCell, b: DayCell) {
-    return a.year === b.year && a.month === b.month && a.day === b.day;
-  }
+  // ── Step handlers ────────────────────────────────────────────────────────────
 
   function handleSelectDay(cell: DayCell) {
     setSelectedDay(cell);
@@ -228,7 +271,9 @@ export function BookingCalendar() {
   const handleConfirm = useCallback(
     async (fields: { fullName: string; phone: string; email: string; topic: string }) => {
       if (!selectedDay || selectedHour === null) return;
+
       const slotUtc = watToUtc(selectedDay.year, selectedDay.month, selectedDay.day, selectedHour);
+
       const message =
         `New Booking Request 📅\n\n` +
         `Name: ${fields.fullName}\n` +
@@ -238,11 +283,13 @@ export function BookingCalendar() {
         `Date: ${formatLongDate(selectedDay)}\n` +
         `Time: ${formatHour(selectedHour)} WAT\n` +
         `Duration: 30 minutes`;
+
       window.open(
         `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
         "_blank",
         "noopener,noreferrer",
       );
+
       try {
         const { createBooking } = await import("@/lib/bookings");
         await createBooking({
@@ -251,12 +298,14 @@ export function BookingCalendar() {
           phone: fields.phone,
           email: fields.email,
         });
+
         toast.success("Booking confirmed. Opening WhatsApp…");
         setSelectedDay(null);
         setSelectedHour(null);
         setFormOpen(false);
         setCalendarOpen(false);
-        refetch();
+        // Refresh slots after a successful booking
+        loadSlots();
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Could not save booking";
         if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
@@ -264,14 +313,14 @@ export function BookingCalendar() {
           setSelectedHour(null);
           setFormOpen(false);
           setTimeOpen(true);
-          refetch();
+          loadSlots();
         } else {
           toast.error(msg);
         }
         throw err;
       }
     },
-    [selectedDay, selectedHour, refetch],
+    [selectedDay, selectedHour, loadSlots],
   );
 
   const handleChangeTime = useCallback(() => {
@@ -279,9 +328,12 @@ export function BookingCalendar() {
     setTimeOpen(true);
   }, []);
 
+  // ── Touch swipe ──────────────────────────────────────────────────────────────
+
   function onTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
   }
+
   function onTouchEnd(e: React.TouchEvent) {
     if (touchStartX.current == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
@@ -289,6 +341,8 @@ export function BookingCalendar() {
     if (Math.abs(dx) < 50) return;
     dx < 0 ? shiftMonth(1) : shiftMonth(-1);
   }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -334,9 +388,11 @@ export function BookingCalendar() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
+
               <div className="font-display text-lg">
                 {MONTH_NAMES_LONG[view.month]} {view.year}
               </div>
+
               <button
                 type="button"
                 onClick={() => shiftMonth(1)}
@@ -346,6 +402,7 @@ export function BookingCalendar() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
+
             <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center text-xs font-medium text-muted-foreground">
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
                 <div key={d} className="py-1">
@@ -353,6 +410,7 @@ export function BookingCalendar() {
                 </div>
               ))}
             </div>
+
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {cells.map((cell, i) => {
                 if (!cell || isDayDisabled(cell)) return <div key={i} className="aspect-square" />;
@@ -374,6 +432,7 @@ export function BookingCalendar() {
                 );
               })}
             </div>
+
             <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
               Swipe to change month
             </p>
@@ -397,7 +456,7 @@ export function BookingCalendar() {
                 Step 2 — Time
               </p>
               <p className="font-display text-lg mt-0.5">
-                {selectedHour !== null ? formatHour(selectedHour) + " WAT" : "Select a time"}
+                {selectedHour !== null ? `${formatHour(selectedHour)} WAT` : "Select a time"}
               </p>
             </div>
             <ChevronDown
@@ -407,6 +466,7 @@ export function BookingCalendar() {
               )}
             />
           </button>
+
           {timeOpen && (
             <div className="border-t border-border p-5 space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
@@ -418,9 +478,10 @@ export function BookingCalendar() {
                     hour,
                   );
                   const isPast = slotUtc.getTime() <= now.getTime();
-                  const isBooked = booked?.has(slotUtc.toISOString()) ?? false;
-                  const disabled = isPast || isBooked || isLoading;
+                  const isBooked = booked.has(slotUtc.toISOString());
+                  const disabled = isPast || isBooked || slotsLoading;
                   const isSelected = selectedHour === hour;
+
                   return (
                     <button
                       key={hour}
@@ -441,6 +502,7 @@ export function BookingCalendar() {
                   );
                 })}
               </div>
+
               <button
                 type="button"
                 onClick={handleProceedToForm}
@@ -459,7 +521,7 @@ export function BookingCalendar() {
         </div>
       )}
 
-      {/* Step 3: form — isolated + memoised, uncontrolled inputs */}
+      {/* Step 3: Form — isolated, memoised, uncontrolled */}
       {formOpen && selectedDay && selectedHour !== null && (
         <BookingForm
           key={`${selectedDay.year}-${selectedDay.month}-${selectedDay.day}-${selectedHour}`}
