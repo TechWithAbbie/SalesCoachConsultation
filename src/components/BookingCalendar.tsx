@@ -248,11 +248,17 @@ export function BookingCalendar() {
       `Time: ${formatHour(hour)} WAT\n` +
       `Duration: 30 minutes`;
 
-    window.open(
-      `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const encoded = encodeURIComponent(message);
+const deepLink = `whatsapp://send?phone=2348081345997&text=${encoded}`;
+const webLink = `https://wa.me/2348081345997?text=${encoded}`;
+
+const a = document.createElement("a");
+a.href = deepLink;
+a.click();
+
+setTimeout(() => {
+  window.open(webLink, "_blank", "noopener,noreferrer");
+}, 1500);
 
     try {
       const { createBooking } = await import("@/lib/bookings");
