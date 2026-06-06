@@ -4405,8 +4405,7 @@ TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\components\BookingCalendar.tsx ===
-import { useMemo, useState, useRef, useCallback, memo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, useRef, useCallback, useEffect, memo } from "react";
 import { ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -4420,6 +4419,8 @@ import {
   type DayCell,
 } from "@/lib/bookings";
 import { cn } from "@/lib/utils";
+
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function todayWat() {
   const wat = new Date(Date.now() + WAT_OFFSET_HOURS * 3600_000);
@@ -4449,13 +4450,14 @@ function getInitialView(today: { year: number; month: number; day: number }) {
   return { year: next.getUTCFullYear(), month: next.getUTCMonth() };
 }
 
-// â”€â”€â”€ Booking form â€” fully isolated, zero re-renders while typing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Uncontrolled inputs (refs): the DOM owns values, React is never notified.
-// The only state is `submitting` which only flips twice per submit attempt.
+// â”€â”€â”€ Booking Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Completely uncontrolled (refs only). memo + stable onConfirm ref means this
+// component NEVER re-renders due to parent state changes while the user types.
 
 interface BookingFormProps {
   selectedDay: DayCell;
   selectedHour: number;
+  // Using a ref-backed stable function â€” reference never changes between renders
   onConfirm: (fields: {
     fullName: string;
     phone: string;
@@ -4465,106 +4467,125 @@ interface BookingFormProps {
   onChangeTime: () => void;
 }
 
-const BookingForm = memo(function BookingForm({
-  selectedDay,
-  selectedHour,
-  onConfirm,
-  onChangeTime,
-}: BookingFormProps) {
-  const nameRef = useRef<HTMLInputElement>(null);
-  const phoneRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
-  const topicRef = useRef<HTMLInputElement>(null);
-  const [submitting, setSubmitting] = useState(false);
+const BookingForm = memo(
+  function BookingForm({ selectedDay, selectedHour, onConfirm, onChangeTime }: BookingFormProps) {
+    const nameRef = useRef<HTMLInputElement>(null);
+    const phoneRef = useRef<HTMLInputElement>(null);
+    const emailRef = useRef<HTMLInputElement>(null);
+    const topicRef = useRef<HTMLInputElement>(null);
+    const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit() {
-    const fullName = nameRef.current?.value.trim() ?? "";
-    const phone = phoneRef.current?.value.trim() ?? "";
-    const email = emailRef.current?.value.trim() ?? "";
-    const topic = topicRef.current?.value.trim() ?? "";
-    if (!fullName || !phone || !email || !topic) {
-      toast.error("Please fill in all fields.");
-      return;
+    async function handleSubmit() {
+      const fullName = nameRef.current?.value.trim() ?? "";
+      const phone = phoneRef.current?.value.trim() ?? "";
+      const email = emailRef.current?.value.trim() ?? "";
+      const topic = topicRef.current?.value.trim() ?? "";
+
+      if (!fullName || !phone || !email || !topic) {
+        toast.error("Please fill in all fields.");
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        await onConfirm({ fullName, phone, email, topic });
+      } finally {
+        setSubmitting(false);
+      }
     }
-    setSubmitting(true);
-    try {
-      await onConfirm({ fullName, phone, email, topic });
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
-  const cls =
-    "w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-1 focus:ring-gold transition";
+    const cls =
+      "w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-1 focus:ring-gold transition";
 
-  return (
-    <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-border">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-          Step 3 â€” Your details
-        </p>
-        <p className="font-display text-lg mt-0.5">
-          {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
-        </p>
+    return (
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+            Step 3 â€” Your details
+          </p>
+          <p className="font-display text-lg mt-0.5">
+            {formatLongDate(selectedDay)} at {formatHour(selectedHour)} WAT
+          </p>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Full Name</label>
+            <input
+              ref={nameRef}
+              type="text"
+              placeholder="Your full name"
+              maxLength={120}
+              className={cls}
+              autoComplete="name"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Phone Number</label>
+            <input
+              ref={phoneRef}
+              type="tel"
+              placeholder="+234â€¦"
+              maxLength={40}
+              autoComplete="tel"
+              className={cls}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Email Address</label>
+            <input
+              ref={emailRef}
+              type="email"
+              placeholder="you@example.com"
+              maxLength={255}
+              autoComplete="email"
+              className={cls}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">
+              What do you want to discuss?
+            </label>
+            <input
+              ref={topicRef}
+              type="text"
+              placeholder="e.g. Closing high ticket clients, objection handlingâ€¦"
+              maxLength={200}
+              className={cls}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-foreground transition hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {submitting ? "Confirmingâ€¦" : "Confirm Booking & Open WhatsApp"}
+          </button>
+
+          <button
+            type="button"
+            onClick={onChangeTime}
+            className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition"
+          >
+            â† Change time
+          </button>
+        </div>
       </div>
-      <div className="p-5 space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Full Name</label>
-          <input
-            ref={nameRef}
-            type="text"
-            placeholder="Your full name"
-            maxLength={120}
-            className={cls}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Phone Number</label>
-          <input ref={phoneRef} type="tel" placeholder="+234â€¦" maxLength={40} className={cls} />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Email Address</label>
-          <input
-            ref={emailRef}
-            type="email"
-            placeholder="you@example.com"
-            maxLength={255}
-            className={cls}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">
-            What do you want to discuss?
-          </label>
-          <input
-            ref={topicRef}
-            type="text"
-            placeholder="e.g. Closing high ticket clients, objection handlingâ€¦"
-            maxLength={200}
-            className={cls}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full rounded-xl bg-gold py-3 text-sm font-semibold text-foreground transition hover:bg-gold/90 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {submitting ? "Confirmingâ€¦" : "Confirm Booking & Open WhatsApp"}
-        </button>
-        <button
-          type="button"
-          onClick={onChangeTime}
-          className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition"
-        >
-          â† Change time
-        </button>
-      </div>
-    </div>
-  );
-});
+    );
+  },
+  // Custom comparator: NEVER re-render BookingForm once mounted.
+  // onConfirm is ref-backed so it's always current; selectedDay/Hour only
+  // change when the user picks a new slot, at which point the key prop
+  // on BookingForm forces a clean remount anyway.
+  () => true,
+);
 
-// â”€â”€â”€ Main calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Main Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function BookingCalendar() {
   const today = useMemo(todayWat, []);
@@ -4575,21 +4596,107 @@ export function BookingCalendar() {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
+  const [booked, setBooked] = useState<Set<string>>(new Set());
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  const loadSlots = useCallback(async () => {
+    setSlotsLoading(true);
+    try {
+      const result = await fetchBookedSlots();
+      setBooked(result);
+    } catch {
+      // non-fatal
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSlots();
+  }, [loadSlots]);
+
   const now = useMemo(() => new Date(), []);
   const cells = useMemo(() => buildMonthGrid(view.year, view.month), [view]);
   const touchStartX = useRef<number | null>(null);
 
-  const {
-    data: booked,
-    refetch,
-    isLoading,
-  } = useQuery({
-    queryKey: ["booked-slots"],
-    queryFn: fetchBookedSlots,
-    // â†“ KEY FIX: never refetch just because the user clicked into an input
-    refetchOnWindowFocus: false,
-    staleTime: 60_000, // treat data as fresh for 60 s â€” no background churn
-  });
+  // â”€â”€ Stable confirm ref â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // This is the core fix. Instead of passing handleConfirm directly (which
+  // changes reference every render because it closes over selectedDay/selectedHour),
+  // we store the latest version in a ref and pass a STABLE wrapper that never
+  // changes. BookingForm's memo comparator sees the same function reference
+  // every render â†’ no re-render â†’ no form hang.
+  const selectedDayRef = useRef(selectedDay);
+  const selectedHourRef = useRef(selectedHour);
+  const loadSlotsRef = useRef(loadSlots);
+
+  useEffect(() => { selectedDayRef.current = selectedDay; }, [selectedDay]);
+  useEffect(() => { selectedHourRef.current = selectedHour; }, [selectedHour]);
+  useEffect(() => { loadSlotsRef.current = loadSlots; }, [loadSlots]);
+
+  const stableConfirm = useRef(async (fields: {
+    fullName: string;
+    phone: string;
+    email: string;
+    topic: string;
+  }) => {
+    const day = selectedDayRef.current;
+    const hour = selectedHourRef.current;
+    if (!day || hour === null) return;
+
+    const slotUtc = watToUtc(day.year, day.month, day.day, hour);
+
+    const message =
+      `New Booking Request ðŸ“…\n\n` +
+      `Name: ${fields.fullName}\n` +
+      `Phone: ${fields.phone}\n` +
+      `Email: ${fields.email}\n` +
+      `Topic: ${fields.topic}\n` +
+      `Date: ${formatLongDate(day)}\n` +
+      `Time: ${formatHour(hour)} WAT\n` +
+      `Duration: 30 minutes`;
+
+    window.open(
+      `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+
+    try {
+      const { createBooking } = await import("@/lib/bookings");
+      await createBooking({
+        slotUtc,
+        fullName: fields.fullName,
+        phone: fields.phone,
+        email: fields.email,
+      });
+
+      toast.success("Booking confirmed. Opening WhatsAppâ€¦");
+      setSelectedDay(null);
+      setSelectedHour(null);
+      setFormOpen(false);
+      setCalendarOpen(false);
+      loadSlotsRef.current();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not save booking";
+      if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
+        toast.error("That slot was just booked. Please pick another time.");
+        setSelectedHour(null);
+        setFormOpen(false);
+        setTimeOpen(true);
+        loadSlotsRef.current();
+      } else {
+        toast.error(msg);
+      }
+      throw err;
+    }
+  }).current;
+
+  const stableChangeTime = useRef(() => {
+    setFormOpen(false);
+    setTimeOpen(true);
+  }).current;
+
+  // â”€â”€ Day helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function isDayDisabled(cell: DayCell): boolean {
     if (cell.dayOfWeek === 0) return true;
@@ -4599,8 +4706,14 @@ export function BookingCalendar() {
     return false;
   }
 
+  function isSameDay(a: DayCell, b: DayCell) {
+    return a.year === b.year && a.month === b.month && a.day === b.day;
+  }
+
   const canGoPrev =
     view.year > today.year || (view.year === today.year && view.month > today.month);
+
+  // â”€â”€ Month navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function shiftMonth(delta: number) {
     if (delta < 0 && !canGoPrev) return;
@@ -4611,9 +4724,7 @@ export function BookingCalendar() {
     setFormOpen(false);
   }
 
-  function isSameDay(a: DayCell, b: DayCell) {
-    return a.year === b.year && a.month === b.month && a.day === b.day;
-  }
+  // â”€â”€ Step handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function handleSelectDay(cell: DayCell) {
     setSelectedDay(cell);
@@ -4632,63 +4743,12 @@ export function BookingCalendar() {
     setTimeOpen(false);
   }
 
-  const handleConfirm = useCallback(
-    async (fields: { fullName: string; phone: string; email: string; topic: string }) => {
-      if (!selectedDay || selectedHour === null) return;
-      const slotUtc = watToUtc(selectedDay.year, selectedDay.month, selectedDay.day, selectedHour);
-      const message =
-        `New Booking Request ðŸ“…\n\n` +
-        `Name: ${fields.fullName}\n` +
-        `Phone: ${fields.phone}\n` +
-        `Email: ${fields.email}\n` +
-        `Topic: ${fields.topic}\n` +
-        `Date: ${formatLongDate(selectedDay)}\n` +
-        `Time: ${formatHour(selectedHour)} WAT\n` +
-        `Duration: 30 minutes`;
-      window.open(
-        `https://wa.me/2348081345997?text=${encodeURIComponent(message)}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
-      try {
-        const { createBooking } = await import("@/lib/bookings");
-        await createBooking({
-          slotUtc,
-          fullName: fields.fullName,
-          phone: fields.phone,
-          email: fields.email,
-        });
-        toast.success("Booking confirmed. Opening WhatsAppâ€¦");
-        setSelectedDay(null);
-        setSelectedHour(null);
-        setFormOpen(false);
-        setCalendarOpen(false);
-        refetch();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Could not save booking";
-        if (msg.toLowerCase().includes("duplicate") || msg.includes("unique")) {
-          toast.error("That slot was just booked. Please pick another time.");
-          setSelectedHour(null);
-          setFormOpen(false);
-          setTimeOpen(true);
-          refetch();
-        } else {
-          toast.error(msg);
-        }
-        throw err;
-      }
-    },
-    [selectedDay, selectedHour, refetch],
-  );
-
-  const handleChangeTime = useCallback(() => {
-    setFormOpen(false);
-    setTimeOpen(true);
-  }, []);
+  // â”€â”€ Touch swipe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function onTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
   }
+
   function onTouchEnd(e: React.TouchEvent) {
     if (touchStartX.current == null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
@@ -4696,6 +4756,8 @@ export function BookingCalendar() {
     if (Math.abs(dx) < 50) return;
     dx < 0 ? shiftMonth(1) : shiftMonth(-1);
   }
+
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -4741,9 +4803,11 @@ export function BookingCalendar() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
+
               <div className="font-display text-lg">
                 {MONTH_NAMES_LONG[view.month]} {view.year}
               </div>
+
               <button
                 type="button"
                 onClick={() => shiftMonth(1)}
@@ -4753,6 +4817,7 @@ export function BookingCalendar() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
+
             <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center text-xs font-medium text-muted-foreground">
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
                 <div key={d} className="py-1">
@@ -4760,6 +4825,7 @@ export function BookingCalendar() {
                 </div>
               ))}
             </div>
+
             <div className="grid grid-cols-7 gap-1 sm:gap-2">
               {cells.map((cell, i) => {
                 if (!cell || isDayDisabled(cell)) return <div key={i} className="aspect-square" />;
@@ -4781,6 +4847,7 @@ export function BookingCalendar() {
                 );
               })}
             </div>
+
             <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
               Swipe to change month
             </p>
@@ -4804,7 +4871,7 @@ export function BookingCalendar() {
                 Step 2 â€” Time
               </p>
               <p className="font-display text-lg mt-0.5">
-                {selectedHour !== null ? formatHour(selectedHour) + " WAT" : "Select a time"}
+                {selectedHour !== null ? `${formatHour(selectedHour)} WAT` : "Select a time"}
               </p>
             </div>
             <ChevronDown
@@ -4814,6 +4881,7 @@ export function BookingCalendar() {
               )}
             />
           </button>
+
           {timeOpen && (
             <div className="border-t border-border p-5 space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
@@ -4825,9 +4893,10 @@ export function BookingCalendar() {
                     hour,
                   );
                   const isPast = slotUtc.getTime() <= now.getTime();
-                  const isBooked = booked?.has(slotUtc.toISOString()) ?? false;
-                  const disabled = isPast || isBooked || isLoading;
+                  const isBooked = booked.has(slotUtc.toISOString());
+                  const disabled = isPast || isBooked || slotsLoading;
                   const isSelected = selectedHour === hour;
+
                   return (
                     <button
                       key={hour}
@@ -4848,6 +4917,7 @@ export function BookingCalendar() {
                   );
                 })}
               </div>
+
               <button
                 type="button"
                 onClick={handleProceedToForm}
@@ -4866,14 +4936,14 @@ export function BookingCalendar() {
         </div>
       )}
 
-      {/* Step 3: form â€” isolated + memoised, uncontrolled inputs */}
+      {/* Step 3: Form â€” never re-renders once mounted */}
       {formOpen && selectedDay && selectedHour !== null && (
         <BookingForm
           key={`${selectedDay.year}-${selectedDay.month}-${selectedDay.day}-${selectedHour}`}
           selectedDay={selectedDay}
           selectedHour={selectedHour}
-          onConfirm={handleConfirm}
-          onChangeTime={handleChangeTime}
+          onConfirm={stableConfirm}
+          onChangeTime={stableChangeTime}
         />
       )}
     </div>
@@ -4900,88 +4970,55 @@ export function useIsMobile() {
   return !!isMobile;
 }
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\integrations\supabase\client.server.ts ===
-// This file is automatically generated. Do not edit it directly.
-// Server-side Supabase client with service role key - bypasses RLS.
-// Use this for admin operations in server functions and server routes only.
-// For user-authenticated queries (with RLS), use the auth middleware instead.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
-  }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      storage: undefined,
-      persistSession: false,
-      autoRefreshToken: false,
-    }
-  });
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error(
+    `Missing Supabase env vars: ${[
+      !SUPABASE_URL && 'VITE_SUPABASE_URL',
+      !SUPABASE_PUBLISHABLE_KEY && 'VITE_SUPABASE_PUBLISHABLE_KEY',
+    ]
+      .filter(Boolean)
+      .join(', ')}`
+  );
 }
 
-let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
-
-// Server-side Supabase client with service role - bypasses RLS
-// SECURITY: Only use this for trusted server-side operations, never expose to client code
-// Import like: import { supabaseAdmin } from "@/integrations/supabase/client.server";
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
-  get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
-    return Reflect.get(_supabaseAdmin, prop, receiver);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
   },
 });
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\integrations\supabase\client.ts ===
-// This file is automatically generated. Do not edit it directly.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR (server-side rendering)
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
-  }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
-      persistSession: true,
-      autoRefreshToken: true,
-    }
-  });
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error(
+    `Missing Supabase env vars: ${[
+      !SUPABASE_URL && 'VITE_SUPABASE_URL',
+      !SUPABASE_PUBLISHABLE_KEY && 'VITE_SUPABASE_PUBLISHABLE_KEY',
+    ]
+      .filter(Boolean)
+      .join(', ')}`
+  );
 }
 
-let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
-
-// Import the supabase client like this:
-// import { supabase } from "@/integrations/supabase/client";
-export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
-  get(_, prop, receiver) {
-    if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase, prop, receiver);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
   },
 });
-
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\integrations\supabase\types.ts ===
 export type Json =
   | string
@@ -5369,7 +5406,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\routes\index.tsx ===
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Linkedin, Mail, Clock, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { BookingCalendar } from "@/components/BookingCalendar";
@@ -5394,8 +5431,45 @@ export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+// â”€â”€â”€ Stable calendar island â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Wrapping in memo means Landing's showBooking state flips NEVER cause
+// BookingCalendar to re-render. The form fields are completely isolated.
+const StableBookingCalendar = memo(BookingCalendar);
+
+// â”€â”€â”€ Booking section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Extracted into its own memo'd component so it never re-renders due to
+// anything happening in Landing (hero buttons, etc.)
+const BookingSection = memo(function BookingSection() {
+  return (
+    <main id="booking-section" className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
+      <div className="mb-8">
+        <h2 className="font-display text-3xl sm:text-4xl">Pick a date</h2>
+        <p className="mt-2 text-muted-foreground">
+          Choose an available date and time. Once you confirm, you will be redirected to WhatsApp
+          to share your booking with Gracious directly.
+        </p>
+      </div>
+      <StableBookingCalendar />
+    </main>
+  );
+});
+
+// â”€â”€â”€ Landing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 function Landing() {
   const [showBooking, setShowBooking] = useState(false);
+
+  function handleBookingToggle() {
+    setShowBooking((v) => {
+      if (!v) {
+        // Scroll after state flip
+        setTimeout(() => {
+          document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
+        }, 50);
+      }
+      return !v;
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -5442,12 +5516,7 @@ function Landing() {
 
           <button
             type="button"
-            onClick={() => {
-              setShowBooking((v) => !v);
-              setTimeout(() => {
-                document.getElementById("booking-section")?.scrollIntoView({ behavior: "smooth" });
-              }, 50);
-            }}
+            onClick={handleBookingToggle}
             className="mt-8 inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-medium text-background transition hover:bg-foreground/90"
           >
             <CalendarIcon className="h-4 w-4" />
@@ -5492,19 +5561,8 @@ function Landing() {
         </div>
       </section>
 
-      {/* Booking section */}
-      {showBooking && (
-        <main id="booking-section" className="mx-auto max-w-3xl px-6 py-12 sm:py-16">
-          <div className="mb-8">
-            <h2 className="font-display text-3xl sm:text-4xl">Pick a time</h2>
-            <p className="mt-2 text-muted-foreground">
-              Choose an available date and time. Once you confirm, you will be redirected to
-              WhatsApp to share your booking with Gracious directly.
-            </p>
-          </div>
-          <BookingCalendar />
-        </main>
-      )}
+      {/* Booking section â€” rendered once, never remounts due to memo */}
+      {showBooking && <BookingSection />}
 
       {/* Footer */}
       <footer className="border-t border-border">
@@ -5529,7 +5587,7 @@ function Landing() {
   );
 }
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\routes\__root.tsx ===
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -5614,6 +5672,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
   }),
   shellComponent: RootShell,
+  // RootComponent no longer touches queryClient or any hook â€”
+  // it just renders the outlet. QueryClientProvider lives in main.tsx.
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
@@ -5633,42 +5693,51 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+// No hooks, no context reads, no providers â€” pure outlet.
+// QueryClientProvider is mounted once in main.tsx and never re-renders.
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-    </QueryClientProvider>
-  );
+  return <Outlet />;
 }
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\main.tsx ===
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
-import { getRouter } from "./router";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient, getRouter } from "./router";
 import "./styles.css";
 
 const router = getRouter();
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
+  <QueryClientProvider client={queryClient}>
     <RouterProvider router={router} />
-  </StrictMode>,
+  </QueryClientProvider>
 );
 // === C:\Users\USER\Documents\ABIGAIL\MY PROJECTS\sales-coach-consultation\src\router.tsx ===
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
-export const getRouter = () => {
-  const queryClient = new QueryClient();
+// QueryClient must live outside getRouter so it's never recreated on re-renders.
+// A new QueryClient on every call = new context = full tree remount = form hang.
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Disable ALL automatic refetching â€” this is the #1 cause of form hangs.
+      // Window focus refetch fires every time a user taps into an input on mobile.
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchIntervalInBackground: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
+  },
+});
 
+export const getRouter = () => {
   const router = createRouter({
     routeTree,
     context: { queryClient },
-    scrollRestoration: true,
+    // scrollRestoration can trigger router activity on focus â€” disable it.
+    scrollRestoration: false,
     defaultPreloadStaleTime: 0,
   });
 
